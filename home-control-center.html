@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HOME CONTROL CENTER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --primary:#0017C1; --bg:#F8F8FB; --surface:#FFFFFF; --control:#F1F1F4;
+  --text:#000000; --label:#626264; --success:#197A4B; --success-bg:#E6F5EC;
+  --error:#CE0000; --warning:#A58000; --warning-bg:#FFF6DD; --border:#E3E3E6;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0B0B0E; --surface:#161619; --control:#1F1F23; --text:#F2F2F4;
+    --label:#9A9A9E; --success:#3FD68A; --success-bg:#0F2A1D; --error:#FF6B6B;
+    --warning:#E0B84A; --warning-bg:#2A2410; --border:#2A2A2E; --primary:#5B72FF;
+  }
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:"Noto Sans JP",sans-serif;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-left:env(safe-area-inset-left,0px);
+  padding-right:env(safe-area-inset-right,0px);
+  overflow-x:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+.mono{font-family:"Roboto Mono",monospace;}
+#app{max-width:520px; margin:0 auto; min-height:100%; display:flex; flex-direction:column;}
+header{display:flex; align-items:center; justify-content:space-between; padding:20px 20px 4px;}
+.sysname{font-size:12px; font-weight:700; letter-spacing:.08em; color:var(--label);}
+.clock{font-size:34px; font-weight:700;}
+.backbtn{
+  border:none; background:var(--control); color:var(--text); width:40px; height:40px;
+  border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+}
+.backbtn:focus-visible{outline:2px solid var(--primary); outline-offset:2px;}
+main{flex:1; padding:12px 20px 32px;}
+.card{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:6px 16px; margin-bottom:14px; overflow:hidden;
+}
+.cardtitle{font-size:12px; font-weight:700; color:var(--label); padding:12px 4px 4px; letter-spacing:.04em;}
+.row{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 4px; border-top:1px solid var(--border);
+}
+.row:first-of-type{border-top:none;}
+.row.clickable{cursor:pointer; background:none; border:none; width:100%; text-align:left; border-top:1px solid var(--border); color:var(--text);}
+.row.clickable:first-of-type{border-top:none;}
+.rowleft{display:flex; align-items:center; gap:12px;}
+.rowlabel{font-size:15px; font-weight:500;}
+.rowsub{font-size:12px; color:var(--label); margin-top:2px;}
+.pill{
+  font-family:"Roboto Mono",monospace; font-size:12px; font-weight:700; letter-spacing:.03em;
+  padding:5px 10px; border-radius:20px; background:var(--control); color:var(--label);
+}
+.pill.on{background:var(--success-bg); color:var(--success);}
+.pill.warn{background:var(--warning-bg); color:var(--warning);}
+.statusbar{
+  display:flex; align-items:center; gap:8px; background:var(--success-bg); color:var(--success);
+  padding:10px 14px; border-radius:12px; font-size:13px; font-weight:700; margin:10px 0 18px;
+}
+.dot{width:8px; height:8px; border-radius:50%; background:var(--success);}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:4px;}
+.navbtn{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:16px; display:flex; flex-direction:column; align-items:flex-start; gap:10px;
+  cursor:pointer; color:var(--text); font-family:inherit;
+}
+.navbtn:focus-visible{outline:2px solid var(--primary); outline-offset:2px;}
+.navbtn span{font-size:13px; font-weight:700;}
+.icon{width:22px; height:22px; stroke:var(--primary); fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+.icon.small{width:18px; height:18px;}
+.icon.muted{stroke:var(--label);}
+button.toggle{
+  border:none; background:var(--control); color:var(--label); font-family:"Roboto Mono",monospace;
+  font-weight:700; font-size:12px; padding:8px 14px; border-radius:20px; cursor:pointer;
+}
+button.toggle.on{background:var(--success-bg); color:var(--success);}
+button.toggle:focus-visible{outline:2px solid var(--primary); outline-offset:2px;}
+.bignum{font-size:44px; font-weight:700; font-family:"Roboto Mono",monospace; text-align:center; margin:18px 0 4px;}
+.biglabel{text-align:center; color:var(--label); font-size:13px; font-weight:700; letter-spacing:.04em; margin-bottom:18px;}
+.slider{
+  -webkit-appearance:none; width:100%; height:6px; border-radius:4px; background:var(--control); outline:none;
+}
+.slider::-webkit-slider-thumb{-webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--primary); cursor:pointer;}
+.modebar{display:flex; gap:8px; overflow-x:auto; padding:4px 0 18px;}
+.modechip{
+  border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13px; font-weight:500;
+  padding:9px 16px; border-radius:20px; white-space:nowrap; cursor:pointer;
+}
+.modechip.active{background:var(--primary); color:#fff; border-color:var(--primary);}
+.lockbtn{
+  width:100%; padding:20px; border-radius:14px; border:none; font-size:16px; font-weight:700;
+  font-family:"Roboto Mono",monospace; display:flex; align-items:center; justify-content:center; gap:10px;
+  background:var(--success-bg); color:var(--success); cursor:pointer;
+}
+.lockbtn.locked-state{background:var(--control); color:var(--text);}
+.confirmwrap{
+  position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center;
+  padding:24px; z-index:20;
+}
+.confirmbox{
+  background:var(--surface); border-radius:16px; padding:24px; width:100%; max-width:360px; text-align:center;
+}
+.confirmbox h3{font-size:16px; margin-bottom:6px;}
+.confirmbox p{font-size:13px; color:var(--label); margin-bottom:18px;}
+.holdbtn{
+  width:100%; padding:18px; border-radius:12px; border:none; background:var(--error); color:#fff;
+  font-weight:700; font-family:"Roboto Mono",monospace; position:relative; overflow:hidden; cursor:pointer;
+}
+.holdbtn .fill{position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(255,255,255,.35);}
+.canceltxt{margin-top:12px; background:none; border:none; color:var(--label); font-size:13px; cursor:pointer; padding:10px;}
+.player{padding:18px 4px;}
+.art{
+  width:100%; aspect-ratio:1/1; max-width:220px; margin:0 auto 16px; border-radius:12px;
+  background:linear-gradient(135deg,var(--primary),var(--control)); display:flex; align-items:center; justify-content:center;
+}
+.trackname{text-align:center; font-size:16px; font-weight:700;}
+.trackartist{text-align:center; font-size:13px; color:var(--label); margin-top:2px;}
+.progress{display:flex; align-items:center; gap:8px; margin:16px 0; font-size:11px; color:var(--label); font-family:"Roboto Mono",monospace;}
+.progressbar{flex:1; height:4px; background:var(--control); border-radius:2px; position:relative;}
+.progressbar i{position:absolute; left:0; top:0; bottom:0; width:38%; background:var(--primary); border-radius:2px;}
+.controls{display:flex; align-items:center; justify-content:center; gap:24px; margin-bottom:14px;}
+.controls button{background:none; border:none; cursor:pointer; padding:8px;}
+.controls .play{background:var(--primary); border-radius:50%; padding:14px;}
+.controls .play .icon{stroke:#fff;}
+.subcontrols{display:flex; justify-content:center; gap:32px;}
+.subcontrols button{background:none; border:none; cursor:pointer; padding:6px;}
+.subcontrols button.active .icon{stroke:var(--primary);}
+.scenecard{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:14px;
+}
+.scenehead{display:flex; align-items:center; justify-content:between; gap:10px; margin-bottom:10px;}
+.scenehead h4{font-size:15px; font-weight:700; flex:1;}
+.runbtn{
+  border:none; background:var(--primary); color:#fff; font-size:12px; font-weight:700; padding:8px 14px;
+  border-radius:20px; cursor:pointer; font-family:"Roboto Mono",monospace;
+}
+.scenelist{font-size:13px; color:var(--label); line-height:1.9;}
+.check{color:var(--success); font-weight:700;}
+.hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="hdrLeft">
+      <div class="sysname">HOME CONTROL CENTER</div>
+      <div class="clock mono" id="clock">--:--</div>
+    </div>
+    <button class="backbtn hidden" id="backBtn" aria-label="戻る">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </header>
+  <main id="main"></main>
+</div>
+
+<script>
+/* ---------- SwitchBotプロキシ設定 ----------
+   DEPLOY.md の手順でWorkerを立てたあと、下記2つを書き換えてください。
+   API_BASEを空のままにすると、このページはこれまで通りモックで動作します
+   （APIキーはここには一切書きません。プロキシ側のSecretにのみ保存されます）。
+*/
+const CONFIG = {
+  API_BASE: "", // 例: "https://home-control-center-proxy.xxxx.workers.dev"
+  DEVICES: {
+    lockUpper: "",   // 上の鍵のSwitchBot Device ID
+    lockLower: "",   // 下の鍵のSwitchBot Device ID
+    ceiling: "",     // Ceiling Light ProのDevice ID
+  }
+};
+const LIVE = !!CONFIG.API_BASE;
+
+async function apiCommand(deviceId, command, parameter = "default", commandType = "command"){
+  if(!LIVE || !deviceId) return {ok:false, mocked:true};
+  try{
+    const res = await fetch(`${CONFIG.API_BASE}/api/devices/${deviceId}/command`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({command, parameter, commandType})
+    });
+    const json = await res.json();
+    return {ok: res.ok && json.statusCode === 100, json};
+  }catch(e){
+    return {ok:false, error:String(e)};
+  }
+}
+
+async function apiStatus(deviceId){
+  if(!LIVE || !deviceId) return null;
+  try{
+    const res = await fetch(`${CONFIG.API_BASE}/api/devices/${deviceId}/status`);
+    const json = await res.json();
+    return json.body || null;
+  }catch(e){
+    return null;
+  }
+}
+
+/* ---------- mock state ---------- */
+const state = {
+  lock: "LOCKED",
+  ceiling: {on:true, brightness:80},
+  tape: {on:false},
+  ac: {on:true, mode:"COOL", temp:26, fan:"AUTO"},
+  tv: {on:true, input:"HDMI 1", volume:18},
+  music: {playing:true, track:"Midnight Drive", artist:"Nova Field", shuffle:false, repeat:false, progress:38}
+};
+
+/* ---------- icons ---------- */
+const I = {
+  lock:'<svg class="icon" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  bulb:'<svg class="icon" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 3z"/></svg>',
+  tape:'<svg class="icon" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>',
+  ac:'<svg class="icon" viewBox="0 0 24 24"><path d="M3 8h18M6 8v3a4 4 0 0 0 4 4M18 8v3a4 4 0 0 1-4 4v3"/></svg>',
+  tv:'<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="13" rx="2"/><path d="M9 21h6"/></svg>',
+  music:'<svg class="icon" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>',
+  chevron:'<svg class="icon small muted" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>',
+  play:'<svg class="icon" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8V4z"/></svg>',
+  pause:'<svg class="icon" viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>',
+  prev:'<svg class="icon" viewBox="0 0 24 24"><path d="M19 4L9 12l10 8V4zM5 4v16"/></svg>',
+  next:'<svg class="icon" viewBox="0 0 24 24"><path d="M5 4l10 8-10 8V4zM19 4v16"/></svg>',
+  shuffle:'<svg class="icon small" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>',
+  repeat:'<svg class="icon small" viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+  play_s:'<svg class="icon small" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8V4z"/></svg>'
+};
+
+/* ---------- clock ---------- */
+function tickClock(){
+  const d = new Date();
+  document.getElementById('clock').textContent =
+    String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+tickClock(); setInterval(tickClock, 15000);
+
+/* ---------- router ---------- */
+const main = document.getElementById('main');
+const backBtn = document.getElementById('backBtn');
+let history = [];
+
+function go(screen, push=true){
+  if(push) history.push(screen);
+  backBtn.classList.toggle('hidden', history.length <= 1 && screen === 'home');
+  render(screen);
+}
+backBtn.addEventListener('click', ()=>{
+  history.pop();
+  const prev = history.length ? history[history.length-1] : 'home';
+  history = history.length ? history : ['home'];
+  render(prev);
+  backBtn.classList.toggle('hidden', history.length <= 1);
+});
+
+function render(screen){
+  main.innerHTML = SCREENS[screen]();
+  bind(screen);
+}
+
+/* ---------- screens ---------- */
+const SCREENS = {
+  home: ()=>`
+    <div class="statusbar"><span class="dot"></span>ALL SYSTEMS NORMAL</div>
+    <div class="card">
+      <div class="cardtitle">SECURITY</div>
+      <div class="row clickable" data-nav="security" as="button">
+        <div class="rowleft">${I.lock}<div><div class="rowlabel">HOME LOCK</div></div></div>
+        <span class="pill ${state.lock==='LOCKED'?'on':'warn'}">${state.lock}</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardtitle">LIGHT</div>
+      <div class="row clickable" data-nav="light">
+        <div class="rowleft">${I.bulb}<div class="rowlabel">CEILING</div></div>
+        <span class="pill ${state.ceiling.on?'on':''}">${state.ceiling.on?'ON':'OFF'}</span>
+      </div>
+      <div class="row clickable" data-nav="light">
+        <div class="rowleft">${I.tape}<div class="rowlabel">TAPE</div></div>
+        <span class="pill ${state.tape.on?'on':''}">${state.tape.on?'ON':'OFF'}</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardtitle">AIR</div>
+      <div class="row clickable" data-nav="air">
+        <div class="rowleft">${I.ac}<div class="rowlabel">AIR CONDITION</div></div>
+        <span class="pill ${state.ac.on?'on':''}">${state.ac.on? state.ac.temp+'°C '+state.ac.mode : 'OFF'}</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardtitle">THEATER</div>
+      <div class="row clickable" data-nav="theater">
+        <div class="rowleft">${I.tv}<div class="rowlabel">TV</div></div>
+        <span class="pill ${state.tv.on?'on':''}">${state.tv.on?'ON':'OFF'}</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardtitle">MUSIC</div>
+      <div class="row clickable" data-nav="music">
+        <div class="rowleft">${I.music}<div><div class="rowlabel">${state.music.track}</div><div class="rowsub">${state.music.artist}</div></div></div>
+        <span class="pill ${state.music.playing?'on':''}">${state.music.playing?'PLAYING':'PAUSED'}</span>
+      </div>
+    </div>
+    <div class="grid2">
+      <button class="navbtn" data-nav="scenes">${I.chevron}<span>SCENES</span></button>
+    </div>
+  `,
+
+  security: ()=>`
+    <div class="cardtitle">HOME LOCK</div>
+    <div class="lockbtn ${state.lock==='LOCKED'?'locked-state':''}" style="margin-top:8px;">
+      ${state.lock}
+    </div>
+    <div style="margin-top:16px;">
+      ${state.lock==='LOCKED'
+        ? `<button class="navbtn" style="width:100%;" id="unlockBtn"><span>UNLOCK</span></button>`
+        : `<button class="navbtn" style="width:100%;" id="lockBtn"><span>LOCK</span></button>`}
+    </div>
+    <p class="rowsub" style="margin-top:14px;">解錠は長押しで確定します（誤操作防止）。</p>
+  `,
+
+  light: ()=>`
+    <div class="card">
+      <div class="cardtitle">CEILING LIGHT</div>
+      <div class="row">
+        <div class="rowlabel">電源</div>
+        <button class="toggle ${state.ceiling.on?'on':''}" id="ceilToggle">${state.ceiling.on?'ON':'OFF'}</button>
+      </div>
+      <div style="padding:14px 4px;">
+        <div class="rowsub" style="margin-bottom:8px;">明るさ ${state.ceiling.brightness}%</div>
+        <input type="range" class="slider" id="ceilBright" min="0" max="100" value="${state.ceiling.brightness}">
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardtitle">TAPE LIGHT</div>
+      <div class="row">
+        <div class="rowlabel">電源</div>
+        <button class="toggle ${state.tape.on?'on':''}" id="tapeToggle">${state.tape.on?'ON':'OFF'}</button>
+      </div>
+    </div>
+  `,
+
+  air: ()=>`
+    <div class="bignum">${state.ac.temp}°C</div>
+    <div class="biglabel">${state.ac.mode} ・ FAN ${state.ac.fan} ・ ${state.ac.on?'ON':'OFF'}</div>
+    <div class="modebar">
+      ${["COOL","HEAT","DRY","AUTO"].map(m=>`<button class="modechip ${state.ac.mode===m?'active':''}" data-mode="${m}">${m}</button>`).join('')}
+    </div>
+    <div class="card">
+      <div class="row">
+        <div class="rowlabel">電源</div>
+        <button class="toggle ${state.ac.on?'on':''}" id="acToggle">${state.ac.on?'ON':'OFF'}</button>
+      </div>
+      <div style="padding:14px 4px;">
+        <div class="rowsub" style="margin-bottom:8px;">温度</div>
+        <input type="range" class="slider" id="acTemp" min="18" max="30" value="${state.ac.temp}">
+      </div>
+    </div>
+  `,
+
+  theater: ()=>`
+    <div class="card">
+      <div class="row">
+        <div class="rowlabel">電源</div>
+        <button class="toggle ${state.tv.on?'on':''}" id="tvToggle">${state.tv.on?'ON':'OFF'}</button>
+      </div>
+      <div class="row">
+        <div class="rowlabel">入力</div>
+        <span class="pill">${state.tv.input}</span>
+      </div>
+      <div style="padding:14px 4px;">
+        <div class="rowsub" style="margin-bottom:8px;">音量 ${state.tv.volume}</div>
+        <input type="range" class="slider" id="tvVol" min="0" max="50" value="${state.tv.volume}">
+      </div>
+    </div>
+  `,
+
+  music: ()=>`
+    <div class="player">
+      <div class="art">${I.music.replace('icon','icon').replace('width="22" height="22"','width="48" height="48"').replace('stroke="var(--primary)"','stroke="#fff"')}</div>
+      <div class="trackname">${state.music.track}</div>
+      <div class="trackartist">${state.music.artist}</div>
+      <div class="progress mono">
+        <span>01:32</span><div class="progressbar"><i style="width:${state.music.progress}%"></i></div><span>04:03</span>
+      </div>
+      <div class="controls">
+        <button id="prevBtn">${I.prev}</button>
+        <button class="play" id="playBtn">${state.music.playing?I.pause:I.play}</button>
+        <button id="nextBtn">${I.next}</button>
+      </div>
+      <div class="subcontrols">
+        <button id="shufBtn" class="${state.music.shuffle?'active':''}">${I.shuffle}</button>
+        <button id="repBtn" class="${state.music.repeat?'active':''}">${I.repeat}</button>
+      </div>
+    </div>
+  `,
+
+  scenes: ()=>{
+    const scenes = [
+      {id:"movie", name:"MOVIE MODE", items:["TV ON","CEILING 20%","TAPE ON","AIR 26°C COOL"]},
+      {id:"music", name:"MUSIC MODE", items:["CEILING MUSIC SETTING","TAPE ON","AIR SETTING","SPOTIFY OPEN"]},
+      {id:"night", name:"NIGHT MODE", items:["CEILING OFF","TAPE OFF","TV OFF","AIR SETTING"]},
+      {id:"leave", name:"LEAVE HOME", items:["LIGHT OFF","TV OFF","TAPE OFF","AIR OFF","HOME LOCK LOCKED"]},
+    ];
+    return scenes.map(s=>`
+      <div class="scenecard">
+        <div class="scenehead">
+          <h4>${s.name}</h4>
+          <button class="runbtn" data-scene="${s.id}">RUN</button>
+        </div>
+        <div class="scenelist" id="scene-${s.id}">
+          ${s.items.map(i=>`<div>・${i}</div>`).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+};
+
+/* ---------- bindings ---------- */
+function bind(screen){
+  main.querySelectorAll('[data-nav]').forEach(el=>{
+    el.addEventListener('click', ()=> go(el.dataset.nav));
+  });
+
+  if(screen === 'security'){
+    const unlockBtn = document.getElementById('unlockBtn');
+    const lockBtn = document.getElementById('lockBtn');
+    if(unlockBtn) unlockBtn.addEventListener('click', ()=> confirmUnlock());
+    if(lockBtn) lockBtn.addEventListener('click', async ()=>{
+      lockBtn.disabled = true;
+      const results = await Promise.all([
+        apiCommand(CONFIG.DEVICES.lockUpper, "lock"),
+        apiCommand(CONFIG.DEVICES.lockLower, "lock"),
+      ]);
+      if(LIVE && results.some(r=>!r.ok)){
+        alert("施錠に失敗しました。機器の状態を確認してください。");
+      } else {
+        state.lock="LOCKED";
+      }
+      go('security', false);
+    });
+  }
+
+  if(screen === 'light'){
+    document.getElementById('ceilToggle').addEventListener('click', async ()=>{
+      const next = !state.ceiling.on;
+      const res = await apiCommand(CONFIG.DEVICES.ceiling, next ? "turnOn" : "turnOff");
+      if(LIVE && !res.ok){ alert("照明の操作に失敗しました。"); return go('light', false); }
+      state.ceiling.on = next; go('light', false);
+    });
+    document.getElementById('tapeToggle').addEventListener('click', ()=>{
+      state.tape.on = !state.tape.on; go('light', false);
+    });
+    document.getElementById('ceilBright').addEventListener('change', async e=>{
+      const v = +e.target.value;
+      const res = await apiCommand(CONFIG.DEVICES.ceiling, "setBrightness", String(v));
+      if(LIVE && !res.ok){ alert("明るさの変更に失敗しました。"); return; }
+      state.ceiling.brightness = v;
+    });
+  }
+
+  if(screen === 'air'){
+    document.getElementById('acToggle').addEventListener('click', ()=>{
+      state.ac.on = !state.ac.on; go('air', false);
+    });
+    document.getElementById('acTemp').addEventListener('change', e=>{
+      state.ac.temp = +e.target.value; go('air', false);
+    });
+    main.querySelectorAll('[data-mode]').forEach(b=>{
+      b.addEventListener('click', ()=>{ state.ac.mode = b.dataset.mode; go('air', false); });
+    });
+  }
+
+  if(screen === 'theater'){
+    document.getElementById('tvToggle').addEventListener('click', ()=>{
+      state.tv.on = !state.tv.on; go('theater', false);
+    });
+    document.getElementById('tvVol').addEventListener('change', e=>{
+      state.tv.volume = +e.target.value;
+    });
+  }
+
+  if(screen === 'music'){
+    document.getElementById('playBtn').addEventListener('click', ()=>{
+      state.music.playing = !state.music.playing; go('music', false);
+    });
+    document.getElementById('shufBtn').addEventListener('click', ()=>{
+      state.music.shuffle = !state.music.shuffle; go('music', false);
+    });
+    document.getElementById('repBtn').addEventListener('click', ()=>{
+      state.music.repeat = !state.music.repeat; go('music', false);
+    });
+  }
+
+  if(screen === 'scenes'){
+    main.querySelectorAll('[data-scene]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        applyScene(b.dataset.scene);
+        const list = document.getElementById('scene-'+b.dataset.scene);
+        list.querySelectorAll('div').forEach((d,i)=>{
+          setTimeout(()=>{ d.innerHTML = '<span class="check">✓</span> '+d.textContent.replace('・',''); }, i*150);
+        });
+      });
+    });
+  }
+}
+
+function applyScene(id){
+  if(id==='movie'){ state.tv.on=true; state.ceiling.brightness=20; state.tape.on=true; state.ac.on=true; state.ac.mode="COOL"; state.ac.temp=26; }
+  if(id==='music'){ state.tape.on=true; state.music.playing=true; }
+  if(id==='night'){ state.ceiling.on=false; state.tape.on=false; state.tv.on=false; }
+  if(id==='leave'){ state.ceiling.on=false; state.tape.on=false; state.tv.on=false; state.ac.on=false; state.lock="LOCKED"; }
+}
+
+/* ---------- unlock confirmation (long press) ---------- */
+function confirmUnlock(){
+  const wrap = document.createElement('div');
+  wrap.className = 'confirmwrap';
+  wrap.innerHTML = `
+    <div class="confirmbox">
+      <h3>HOME LOCK を解錠しますか？</h3>
+      <p>ボタンを長押しして確定してください</p>
+      <button class="holdbtn" id="holdBtn"><div class="fill" id="holdFill"></div>UNLOCK</button>
+      <button class="canceltxt" id="cancelHold">キャンセル</button>
+    </div>`;
+  document.body.appendChild(wrap);
+
+  const holdBtn = wrap.querySelector('#holdBtn');
+  const fill = wrap.querySelector('#holdFill');
+  let timer=null, pct=0;
+
+  function start(){
+    pct=0;
+    timer = setInterval(()=>{
+      pct += 4;
+      fill.style.width = pct+'%';
+      if(pct>=100){
+        clearInterval(timer);
+        finishUnlock();
+      }
+    }, 40);
+  }
+  async function finishUnlock(){
+    holdBtn.disabled = true;
+    const results = await Promise.all([
+      apiCommand(CONFIG.DEVICES.lockUpper, "unlock"),
+      apiCommand(CONFIG.DEVICES.lockLower, "unlock"),
+    ]);
+    wrap.remove();
+    if(LIVE && results.some(r=>!r.ok)){
+      alert("解錠に失敗しました。機器の状態を確認してください。");
+      go('security', false);
+      return;
+    }
+    state.lock = "UNLOCKED";
+    go('security', false);
+  }
+  function stop(){ clearInterval(timer); fill.style.width='0%'; }
+
+  holdBtn.addEventListener('mousedown', start);
+  holdBtn.addEventListener('touchstart', start);
+  ['mouseup','mouseleave','touchend'].forEach(ev=> holdBtn.addEventListener(ev, stop));
+  wrap.querySelector('#cancelHold').addEventListener('click', ()=> wrap.remove());
+}
+
+/* ---------- init ---------- */
+history = ['home'];
+render('home');
+</script>
+</body>
+</html>
