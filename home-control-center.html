@@ -32,17 +32,29 @@ body{
   overflow-x:hidden;
   -webkit-tap-highlight-color:transparent;
 }
+html,body{height:100%; overflow:hidden;}
 .mono{font-family:"Roboto Mono",monospace;}
-#app{max-width:520px; margin:0 auto; min-height:100%; display:flex; flex-direction:column;}
-header{display:flex; align-items:center; justify-content:space-between; padding:20px 20px 4px;}
-.sysname{font-size:12px; font-weight:700; letter-spacing:.08em; color:var(--label);}
-.clock{font-size:34px; font-weight:700;}
+#app{max-width:960px; margin:0 auto; height:100%; display:flex; flex-direction:column;}
+header{display:flex; align-items:center; justify-content:space-between; padding:14px 24px 4px; flex-shrink:0;}
+.sysname{font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--label);}
+.clock{font-size:24px; font-weight:700;}
 .backbtn{
-  border:none; background:var(--control); color:var(--text); width:40px; height:40px;
+  border:none; background:var(--control); color:var(--text); width:36px; height:36px;
   border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer;
 }
 .backbtn:focus-visible{outline:2px solid var(--primary); outline-offset:2px;}
-main{flex:1; padding:12px 20px 32px;}
+main{flex:1; min-height:0; overflow-y:auto; padding:8px 24px 20px;}
+.screen-narrow{max-width:440px; margin:0 auto;}
+.home-grid{
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(230px,1fr));
+  grid-auto-rows:min-content; gap:12px; align-content:start;
+}
+@media (orientation: portrait){
+  #app{max-width:520px;}
+  .home-grid{grid-template-columns:1fr;}
+  html,body{overflow-y:auto;}
+  main{overflow-y:visible;}
+}
 .card{
   background:var(--surface); border:1px solid var(--border); border-radius:14px;
   padding:6px 16px; margin-bottom:14px; overflow:hidden;
@@ -119,10 +131,14 @@ button.toggle:focus-visible{outline:2px solid var(--primary); outline-offset:2px
 }
 .holdbtn .fill{position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(255,255,255,.35);}
 .canceltxt{margin-top:12px; background:none; border:none; color:var(--label); font-size:13px; cursor:pointer; padding:10px;}
-.player{padding:18px 4px;}
+.player{padding:8px 4px;}
 .art{
-  width:100%; aspect-ratio:1/1; max-width:220px; margin:0 auto 16px; border-radius:12px;
+  width:100%; aspect-ratio:1/1; max-width:150px; margin:0 auto 12px; border-radius:12px;
   background:linear-gradient(135deg,var(--primary),var(--control)); display:flex; align-items:center; justify-content:center;
+}
+@media (orientation: portrait){
+  .player{padding:18px 4px;}
+  .art{max-width:220px; margin-bottom:16px;}
 }
 .trackname{text-align:center; font-size:16px; font-weight:700;}
 .trackartist{text-align:center; font-size:13px; color:var(--label); margin-top:2px;}
@@ -529,14 +545,15 @@ function render(screen){
 const SCREENS = {
   home: ()=>`
     <div class="statusbar"><span class="dot"></span>ALL SYSTEMS NORMAL</div>
-    <div class="card">
+    <div class="home-grid">
+    <div class="card" style="margin-bottom:0;">
       <div class="cardtitle">SECURITY</div>
       <div class="row clickable" data-nav="security" as="button">
         <div class="rowleft">${I.lock}<div><div class="rowlabel">HOME LOCK</div></div></div>
         <span class="pill ${state.lock==='LOCKED'?'on':'warn'}">${state.lock}</span>
       </div>
     </div>
-    <div class="card">
+    <div class="card" style="margin-bottom:0;">
       <div class="cardtitle">LIGHT</div>
       <div class="row clickable" data-nav="light">
         <div class="rowleft">${I.bulb}<div class="rowlabel">CEILING</div></div>
@@ -547,33 +564,32 @@ const SCREENS = {
         <span class="pill ${state.tape.on?'on':''}">${state.tape.on?'ON':'OFF'}</span>
       </div>
     </div>
-    <div class="card">
+    <div class="card" style="margin-bottom:0;">
       <div class="cardtitle">AIR</div>
       <div class="row clickable" data-nav="air">
         <div class="rowleft">${I.ac}<div class="rowlabel">AIR CONDITION</div></div>
         <span class="pill ${state.ac.on?'on':''}">${state.ac.on? state.ac.temp+'°C '+state.ac.mode : 'OFF'}</span>
       </div>
     </div>
-    <div class="card">
+    <div class="card" style="margin-bottom:0;">
       <div class="cardtitle">THEATER</div>
       <div class="row clickable" data-nav="theater">
         <div class="rowleft">${I.tv}<div class="rowlabel">TV</div></div>
         <span class="pill ${state.tv.on?'on':''}">${state.tv.on?'ON':'OFF'}</span>
       </div>
     </div>
-    <div class="card">
+    <div class="card" style="margin-bottom:0;">
       <div class="cardtitle">MUSIC</div>
       <div class="row clickable" data-nav="music">
         <div class="rowleft">${I.music}<div><div class="rowlabel">${state.music.active ? state.music.track : (SPOTIFY_LIVE ? (SpotifyAuth.loggedIn ? '再生していません' : 'Spotify未ログイン') : 'Spotify未設定')}</div><div class="rowsub">${state.music.active ? state.music.artist : ''}</div></div></div>
         <span class="pill ${state.music.playing?'on':''}">${state.music.active ? (state.music.playing?'PLAYING':'PAUSED') : '-'}</span>
       </div>
     </div>
-    <div class="grid2">
-      <button class="navbtn" data-nav="scenes">${I.chevron}<span>SCENES</span></button>
+    <button class="navbtn" data-nav="scenes" style="justify-content:center; flex-direction:row; gap:8px;"><span>SCENES</span>${I.chevron}</button>
     </div>
   `,
 
-  security: ()=>`
+  security: ()=>`<div class="screen-narrow">
     <div class="cardtitle">HOME LOCK</div>
     <div class="lockbtn ${state.lock==='LOCKED'?'locked-state':''}" style="margin-top:8px;">
       ${state.lock}
@@ -584,9 +600,9 @@ const SCREENS = {
         : `<button class="navbtn" style="width:100%;" id="lockBtn"><span>LOCK</span></button>`}
     </div>
     <p class="rowsub" style="margin-top:14px;">解錠は長押しで確定します（誤操作防止）。</p>
-  `,
+  </div>`,
 
-  light: ()=>`
+  light: ()=>`<div class="screen-narrow">
     <div class="card">
       <div class="cardtitle">CEILING LIGHT</div>
       <div class="row">
@@ -605,9 +621,9 @@ const SCREENS = {
         <button class="toggle ${state.tape.on?'on':''}" id="tapeToggle">${state.tape.on?'ON':'OFF'}</button>
       </div>
     </div>
-  `,
+  </div>`,
 
-  air: ()=>`
+  air: ()=>`<div class="screen-narrow">
     <div class="bignum">${state.ac.temp}°C</div>
     <div class="biglabel">${state.ac.mode} ・ FAN ${state.ac.fan} ・ ${state.ac.on?'ON':'OFF'}</div>
     <div class="modebar">
@@ -623,9 +639,9 @@ const SCREENS = {
         <input type="range" class="slider" id="acTemp" min="18" max="30" value="${state.ac.temp}">
       </div>
     </div>
-  `,
+  </div>`,
 
-  theater: ()=>`
+  theater: ()=>`<div class="screen-narrow">
     <div class="card">
       <div class="row">
         <div class="rowlabel">電源</div>
@@ -640,28 +656,28 @@ const SCREENS = {
         <input type="range" class="slider" id="tvVol" min="0" max="50" value="${state.tv.volume}">
       </div>
     </div>
-  `,
+  </div>`,
 
   music: ()=>{
     if(!SPOTIFY_LIVE){
-      return `<div class="player"><p class="rowsub" style="text-align:center; padding:24px 0;">Spotify連携が未設定です。<br>Client IDを設定すると使えるようになります。</p></div>`;
+      return `<div class="screen-narrow"><div class="player"><p class="rowsub" style="text-align:center; padding:24px 0;">Spotify連携が未設定です。<br>Client IDを設定すると使えるようになります。</p></div></div>`;
     }
     if(!SpotifyAuth.loggedIn){
-      return `
+      return `<div class="screen-narrow">
         <div class="player" style="text-align:center; padding:24px 0;">
           ${I.music.replace('width="22" height="22"','width="40" height="40"')}
           <p class="rowsub" style="margin:14px 0 18px;">Spotifyにログインすると<br>再生状況を表示・操作できます</p>
           <button class="navbtn" id="spLoginBtn" style="width:100%; align-items:center;"><span>Spotifyにログイン</span></button>
-        </div>`;
+        </div></div>`;
     }
     if(!state.music.active){
-      return `
+      return `<div class="screen-narrow">
         <div class="player" style="text-align:center; padding:24px 0;">
           ${I.music.replace('width="22" height="22"','width="40" height="40"')}
           <p class="rowsub" style="margin:14px 0;">現在再生中の項目がありません</p>
-        </div>`;
+        </div></div>`;
     }
-    return `
+    return `<div class="screen-narrow">
     <div class="player">
       <div class="art">${state.music.art ? `<img src="${state.music.art}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : I.music.replace('width="22" height="22"','width="48" height="48"').replace('stroke="var(--primary)"','stroke="#fff"')}</div>
       <div class="trackname">${state.music.track}</div>
@@ -679,7 +695,7 @@ const SCREENS = {
         <button id="repBtn" class="${state.music.repeat?'active':''}">${I.repeat}</button>
       </div>
     </div>
-  `;
+  </div>`;
   },
 
   scenes: ()=>{
@@ -689,8 +705,8 @@ const SCREENS = {
       {id:"night", name:"NIGHT MODE", items:["CEILING OFF","TAPE OFF","TV OFF","AIR SETTING"]},
       {id:"leave", name:"LEAVE HOME", items:["LIGHT OFF","TV OFF","TAPE OFF","AIR OFF","HOME LOCK LOCKED"]},
     ];
-    return scenes.map(s=>`
-      <div class="scenecard">
+    return `<div class="home-grid">` + scenes.map(s=>`
+      <div class="scenecard" style="margin-bottom:0;">
         <div class="scenehead">
           <h4>${s.name}</h4>
           <button class="runbtn" data-scene="${s.id}">RUN</button>
@@ -699,7 +715,7 @@ const SCREENS = {
           ${s.items.map(i=>`<div>・${i}</div>`).join('')}
         </div>
       </div>
-    `).join('');
+    `).join('') + `</div>`;
   }
 };
 
