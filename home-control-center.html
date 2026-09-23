@@ -171,11 +171,14 @@ button.toggle:focus-visible{outline:2px solid var(--primary); outline-offset:2px
    （APIキーはここには一切書きません。プロキシ側のSecretにのみ保存されます）。
 */
 const CONFIG = {
-  API_BASE: "https://home-control-center-proxy.a1t0-control.workers.dev", // 例: "https://home-control-center-proxy.xxxx.workers.dev"
+  API_BASE: "https://home-control-center-proxy.a1t0-control.workers.dev",
   DEVICES: {
-    lockUpper: "C72C145BC7A8",   // 上の鍵のSwitchBot Device ID
-    lockLower: "EB37BA2AE02A",   // 下の鍵のSwitchBot Device ID
-    ceiling: "D58EE9D6EF2E",     // Ceiling Light ProのDevice ID
+    lockUpper: "C72C145BC7A8", // 上の鍵
+    lockLower: "EB37BA2AE02A", // 下の鍵
+    ceiling: "D58EE9D6EF2E",   // シーリングライト (Ceiling Light Pro)
+    tape: "02-202601111924-32816822",  // テープライト (赤外線)
+    tv: "02-202511131659-91870292",    // テレビ (赤外線)
+    ac: "02-202606061248-16501106",    // エアコン (赤外線)
   }
 };
 const LIVE = !!CONFIG.API_BASE;
@@ -204,6 +207,15 @@ async function apiStatus(deviceId){
   }catch(e){
     return null;
   }
+}
+
+const AC_MODE_CODE = {AUTO:1, COOL:2, DRY:3, HEAT:5};
+function sendACAll(acState){
+  const modeCode = AC_MODE_CODE[acState.mode] ?? 2;
+  const power = acState.on ? "on" : "off";
+  // "温度,モード,風量,電源" 形式 (SwitchBot Air Conditioner setAll)
+  const parameter = `${acState.temp},${modeCode},1,${power}`;
+  return apiCommand(CONFIG.DEVICES.ac, "setAll", parameter);
 }
 
 /* ---------- mock state ---------- */
@@ -455,8 +467,11 @@ function bind(screen){
       if(LIVE && !res.ok){ alert("照明の操作に失敗しました。"); return go('light', false); }
       state.ceiling.on = next; go('light', false);
     });
-    document.getElementById('tapeToggle').addEventListener('click', ()=>{
-      state.tape.on = !state.tape.on; go('light', false);
+    document.getElementById('tapeToggle').addEventListener('click', async ()=>{
+      const next = !state.tape.on;
+      const res = await apiCommand(CONFIG.DEVICES.tape, next ? "turnOn" : "turnOff");
+      if(LIVE && !res.ok){ alert("テープライトの操作に失敗しました。"); return go('light', false); }
+      state.tape.on = next; go('light', false);
     });
     document.getElementById('ceilBright').addEventListener('change', async e=>{
       const v = +e.target.value;
@@ -467,23 +482,42 @@ function bind(screen){
   }
 
   if(screen === 'air'){
-    document.getElementById('acToggle').addEventListener('click', ()=>{
-      state.ac.on = !state.ac.on; go('air', false);
+    document.getElementById('acToggle').addEventListener('click', async ()=>{
+      const next = !state.ac.on;
+      const res = await sendACAll({...state.ac, on:next});
+      if(LIVE && !res.ok){ alert("エアコンの操作に失敗しました。"); return go('air', false); }
+      state.ac.on = next; go('air', false);
     });
-    document.getElementById('acTemp').addEventListener('change', e=>{
-      state.ac.temp = +e.target.value; go('air', false);
+    document.getElementById('acTemp').addEventListener('change', async e=>{
+      const v = +e.target.value;
+      const res = await sendACAll({...state.ac, temp:v});
+      if(LIVE && !res.ok){ alert("温度の変更に失敗しました。"); return go('air', false); }
+      state.ac.temp = v; go('air', false);
     });
     main.querySelectorAll('[data-mode]').forEach(b=>{
-      b.addEventListener('click', ()=>{ state.ac.mode = b.dataset.mode; go('air', false); });
+      b.addEventListener('click', async ()=>{
+        const res = await sendACAll({...state.ac, mode:b.dataset.mode});
+        if(LIVE && !res.ok){ alert("モードの変更に失敗しました。"); return go('air', false); }
+        state.ac.mode = b.dataset.mode; go('air', false);
+      });
     });
   }
 
   if(screen === 'theater'){
-    document.getElementById('tvToggle').addEventListener('click', ()=>{
-      state.tv.on = !state.tv.on; go('theater', false);
+    document.getElementById('tvToggle').addEventListener('click', async ()=>{
+      const next = !state.tv.on;
+      const res = await apiCommand(CONFIG.DEVICES.tv, next ? "turnOn" : "turnOff");
+      if(LIVE && !res.ok){ alert("テレビの操作に失敗しました。"); return go('theater', false); }
+      state.tv.on = next; go('theater', false);
     });
-    document.getElementById('tvVol').addEventListener('change', e=>{
-      state.tv.volume = +e.target.value;
+    document.getElementById('tvVol').addEventListener('change', async e=>{
+      const v = +e.target.value;
+      const delta = v - state.tv.volume;
+      state.tv.volume = v; // 赤外線リモコンは相対操作のみのため表示上の値として保持
+      const steps = Math.min(Math.abs(delta), 5); // 連打しすぎないよう上限を設ける
+      for(let i=0;i<steps;i++){
+        await apiCommand(CONFIG.DEVICES.tv, delta > 0 ? "volumeAdd" : "volumeSub");
+      }
     });
   }
 
@@ -501,8 +535,10 @@ function bind(screen){
 
   if(screen === 'scenes'){
     main.querySelectorAll('[data-scene]').forEach(b=>{
-      b.addEventListener('click', ()=>{
-        applyScene(b.dataset.scene);
+      b.addEventListener('click', async ()=>{
+        b.disabled = true;
+        await applyScene(b.dataset.scene);
+        b.disabled = false;
         const list = document.getElementById('scene-'+b.dataset.scene);
         list.querySelectorAll('div').forEach((d,i)=>{
           setTimeout(()=>{ d.innerHTML = '<span class="check">✓</span> '+d.textContent.replace('・',''); }, i*150);
@@ -512,11 +548,40 @@ function bind(screen){
   }
 }
 
-function applyScene(id){
-  if(id==='movie'){ state.tv.on=true; state.ceiling.brightness=20; state.tape.on=true; state.ac.on=true; state.ac.mode="COOL"; state.ac.temp=26; }
-  if(id==='music'){ state.tape.on=true; state.music.playing=true; }
-  if(id==='night'){ state.ceiling.on=false; state.tape.on=false; state.tv.on=false; }
-  if(id==='leave'){ state.ceiling.on=false; state.tape.on=false; state.tv.on=false; state.ac.on=false; state.lock="LOCKED"; }
+async function applyScene(id){
+  if(id==='movie'){
+    state.tv.on=true; state.ceiling.brightness=20; state.tape.on=true;
+    state.ac.on=true; state.ac.mode="COOL"; state.ac.temp=26;
+    await Promise.all([
+      apiCommand(CONFIG.DEVICES.tv, "turnOn"),
+      apiCommand(CONFIG.DEVICES.ceiling, "setBrightness", "20"),
+      apiCommand(CONFIG.DEVICES.tape, "turnOn"),
+      sendACAll(state.ac),
+    ]);
+  }
+  if(id==='music'){
+    state.tape.on=true; state.music.playing=true;
+    await apiCommand(CONFIG.DEVICES.tape, "turnOn");
+  }
+  if(id==='night'){
+    state.ceiling.on=false; state.tape.on=false; state.tv.on=false;
+    await Promise.all([
+      apiCommand(CONFIG.DEVICES.ceiling, "turnOff"),
+      apiCommand(CONFIG.DEVICES.tape, "turnOff"),
+      apiCommand(CONFIG.DEVICES.tv, "turnOff"),
+    ]);
+  }
+  if(id==='leave'){
+    state.ceiling.on=false; state.tape.on=false; state.tv.on=false; state.ac.on=false; state.lock="LOCKED";
+    await Promise.all([
+      apiCommand(CONFIG.DEVICES.ceiling, "turnOff"),
+      apiCommand(CONFIG.DEVICES.tape, "turnOff"),
+      apiCommand(CONFIG.DEVICES.tv, "turnOff"),
+      sendACAll({...state.ac, on:false}),
+      apiCommand(CONFIG.DEVICES.lockUpper, "lock"),
+      apiCommand(CONFIG.DEVICES.lockLower, "lock"),
+    ]);
+  }
 }
 
 /* ---------- unlock confirmation (long press) ---------- */
