@@ -171,11 +171,11 @@ button.toggle:focus-visible{outline:2px solid var(--primary); outline-offset:2px
    （APIキーはここには一切書きません。プロキシ側のSecretにのみ保存されます）。
 */
 const CONFIG = {
-  API_BASE: "", // 例: "https://home-control-center-proxy.xxxx.workers.dev"
+  API_BASE: "https://home-control-center-proxy.a1t0-control.workers.dev", // 例: "https://home-control-center-proxy.xxxx.workers.dev"
   DEVICES: {
-    lockUpper: "",   // 上の鍵のSwitchBot Device ID
-    lockLower: "",   // 下の鍵のSwitchBot Device ID
-    ceiling: "",     // Ceiling Light ProのDevice ID
+    lockUpper: "C72C145BC7A8",   // 上の鍵のSwitchBot Device ID
+    lockLower: "EB37BA2AE02A",   // 下の鍵のSwitchBot Device ID
+    ceiling: "D58EE9D6EF2E",     // Ceiling Light ProのDevice ID
   }
 };
 const LIVE = !!CONFIG.API_BASE;
