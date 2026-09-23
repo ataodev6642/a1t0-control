@@ -218,6 +218,47 @@ function sendACAll(acState){
   return apiCommand(CONFIG.DEVICES.ac, "setAll", parameter);
 }
 
+/* ---------- 実機の状態を読み戻して同期 ----------
+   HOME LOCKとシーリングライトは実体のあるデバイスなので、
+   SwitchBot側に本当の状態を問い合わせて表示を合わせる。
+   赤外線機器(TV/テープライト/エアコン)はSwitchBot側にも
+   実際の状態という概念がないため対象外。
+*/
+let lastSyncOk = true;
+async function syncRealDevices(){
+  if(!LIVE) return false;
+  const [upper, lower, ceil] = await Promise.all([
+    apiStatus(CONFIG.DEVICES.lockUpper),
+    apiStatus(CONFIG.DEVICES.lockLower),
+    apiStatus(CONFIG.DEVICES.ceiling),
+  ]);
+  let changed = false;
+  if(upper && lower){
+    // どちらか一方でも解錠なら、全体としては「解錠」扱いにする(安全側)
+    const nextLock = (upper.lockState === "locked" && lower.lockState === "locked") ? "LOCKED" : "UNLOCKED";
+    if(nextLock !== state.lock){ state.lock = nextLock; changed = true; }
+    lastSyncOk = true;
+  } else if(upper || lower){
+    lastSyncOk = false; // 片方しか取得できなかった=部分的に不明
+  } else {
+    lastSyncOk = false;
+  }
+  if(ceil){
+    if(typeof ceil.power === "string"){
+      const on = ceil.power === "on";
+      if(on !== state.ceiling.on){ state.ceiling.on = on; changed = true; }
+    }
+    if(typeof ceil.brightness === "number" && ceil.brightness !== state.ceiling.brightness){
+      state.ceiling.brightness = ceil.brightness; changed = true;
+    }
+  }
+  return changed;
+}
+
+function currentScreen(){
+  return history.length ? history[history.length-1] : 'home';
+}
+
 /* ---------- mock state ---------- */
 const state = {
   lock: "LOCKED",
@@ -263,6 +304,9 @@ function go(screen, push=true){
   if(push) history.push(screen);
   backBtn.classList.toggle('hidden', history.length <= 1 && screen === 'home');
   render(screen);
+  if(LIVE && (screen === 'security' || screen === 'light')){
+    syncRealDevices().then(changed=>{ if(changed && currentScreen()===screen) render(screen); });
+  }
 }
 backBtn.addEventListener('click', ()=>{
   history.pop();
@@ -638,6 +682,19 @@ function confirmUnlock(){
 /* ---------- init ---------- */
 history = ['home'];
 render('home');
+
+if(LIVE){
+  // 起動直後に一度同期して表示を実機に合わせる
+  syncRealDevices().then(changed=>{ if(changed) render(currentScreen()); });
+  // バックグラウンドで定期的に同期し、関係する画面が開いていれば再描画
+  setInterval(async ()=>{
+    const changed = await syncRealDevices();
+    const s = currentScreen();
+    if(changed && (s === 'home' || s === 'security' || s === 'light')){
+      render(s);
+    }
+  }, 20000);
+}
 </script>
 </body>
 </html>
