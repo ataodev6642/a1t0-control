@@ -225,8 +225,16 @@ function sendACAll(acState){
    実際の状態という概念がないため対象外。
 */
 let lastSyncOk = true;
+let lastCommandAt = 0; // 直近でこのアプリからコマンドを送った時刻
+const SYNC_COOLDOWN_MS = 8000; // コマンド送信後、この間はクラウド側の反映待ちとして同期をスキップ
+
+function markCommanded(){
+  lastCommandAt = Date.now();
+}
+
 async function syncRealDevices(){
   if(!LIVE) return false;
+  if(Date.now() - lastCommandAt < SYNC_COOLDOWN_MS) return false; // 反映待ち中は自分の表示を信じる
   const [upper, lower, ceil] = await Promise.all([
     apiStatus(CONFIG.DEVICES.lockUpper),
     apiStatus(CONFIG.DEVICES.lockLower),
@@ -499,6 +507,7 @@ function bind(screen){
         alert("施錠に失敗しました。機器の状態を確認してください。");
       } else {
         state.lock="LOCKED";
+        markCommanded();
       }
       go('security', false);
     });
@@ -509,7 +518,7 @@ function bind(screen){
       const next = !state.ceiling.on;
       const res = await apiCommand(CONFIG.DEVICES.ceiling, next ? "turnOn" : "turnOff");
       if(LIVE && !res.ok){ alert("照明の操作に失敗しました。"); return go('light', false); }
-      state.ceiling.on = next; go('light', false);
+      state.ceiling.on = next; markCommanded(); go('light', false);
     });
     document.getElementById('tapeToggle').addEventListener('click', async ()=>{
       const next = !state.tape.on;
@@ -521,7 +530,7 @@ function bind(screen){
       const v = +e.target.value;
       const res = await apiCommand(CONFIG.DEVICES.ceiling, "setBrightness", String(v));
       if(LIVE && !res.ok){ alert("明るさの変更に失敗しました。"); return; }
-      state.ceiling.brightness = v;
+      state.ceiling.brightness = v; markCommanded();
     });
   }
 
@@ -596,6 +605,7 @@ async function applyScene(id){
   if(id==='movie'){
     state.tv.on=true; state.ceiling.brightness=20; state.tape.on=true;
     state.ac.on=true; state.ac.mode="COOL"; state.ac.temp=26;
+    markCommanded();
     await Promise.all([
       apiCommand(CONFIG.DEVICES.tv, "turnOn"),
       apiCommand(CONFIG.DEVICES.ceiling, "setBrightness", "20"),
@@ -609,6 +619,7 @@ async function applyScene(id){
   }
   if(id==='night'){
     state.ceiling.on=false; state.tape.on=false; state.tv.on=false;
+    markCommanded();
     await Promise.all([
       apiCommand(CONFIG.DEVICES.ceiling, "turnOff"),
       apiCommand(CONFIG.DEVICES.tape, "turnOff"),
@@ -617,6 +628,7 @@ async function applyScene(id){
   }
   if(id==='leave'){
     state.ceiling.on=false; state.tape.on=false; state.tv.on=false; state.ac.on=false; state.lock="LOCKED";
+    markCommanded();
     await Promise.all([
       apiCommand(CONFIG.DEVICES.ceiling, "turnOff"),
       apiCommand(CONFIG.DEVICES.tape, "turnOff"),
@@ -669,6 +681,7 @@ function confirmUnlock(){
       return;
     }
     state.lock = "UNLOCKED";
+    markCommanded();
     go('security', false);
   }
   function stop(){ clearInterval(timer); fill.style.width='0%'; }
