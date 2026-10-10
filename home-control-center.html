@@ -7,19 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<script>
-  const password = "aito0907toki1020";
-  if (sessionStorage.getItem("auth") !== "true") {
-    const input = prompt("パスワードを入力してください：");
-    if (input === password) {
-      sessionStorage.setItem("auth", "true");
-    } else {
-      alert("パスワードが違います");
-      window.location.href = "about:blank"; // 白紙ページへ飛ばす
-    }
-  }
-</script>
-
 <style>
 :root{
   --primary:#0017C1; --bg:#F8F8FB; --surface:#FFFFFF; --control:#F1F1F4;
@@ -177,10 +164,32 @@ button.toggle:focus-visible{outline:2px solid var(--primary); outline-offset:2px
 .scenelist{font-size:13px; color:var(--label); line-height:1.9;}
 .check{color:var(--success); font-weight:700;}
 .hidden{display:none !important;}
+#loginScreen{
+  position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  background:var(--bg); z-index:50; padding:24px;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+.loginbox{width:100%; max-width:320px; text-align:center;}
+.logininput{
+  width:100%; padding:16px; border-radius:12px; border:1px solid var(--border); background:var(--surface);
+  color:var(--text); font-size:20px; text-align:center; letter-spacing:.3em; font-family:"Roboto Mono",monospace;
+}
+.logininput:focus{outline:2px solid var(--primary); outline-offset:2px;}
 </style>
 </head>
 <body>
-<div id="app">
+<div id="loginScreen" class="hidden">
+  <div class="loginbox">
+    <div class="sysname" style="margin-bottom:6px;">HOME CONTROL CENTER</div>
+    <h2 style="font-size:18px; margin-bottom:18px;">PINを入力してください</h2>
+    <form id="loginForm">
+      <input type="password" inputmode="numeric" id="loginPasscode" class="logininput" placeholder="PIN" autocomplete="off" required>
+      <p id="loginError" class="rowsub" style="color:var(--error); min-height:16px; margin:8px 0;"></p>
+      <button type="submit" class="navbtn" style="width:100%; align-items:center;"><span>ログイン</span></button>
+    </form>
+  </div>
+</div>
+<div id="app" class="hidden">
   <header>
     <div id="hdrLeft">
       <div class="sysname">HOME CONTROL CENTER</div>
@@ -211,6 +220,77 @@ const CONFIG = {
   }
 };
 const LIVE = !!CONFIG.API_BASE;
+
+/* ---------- アプリログイン(PIN)セッション管理 ----------
+   PIN自体はここには書かず、Workerに送って検証してもらう。
+   成功時にWorkerが発行する署名付きトークンだけをlocalStorageに保存する。
+*/
+const Session = {
+  get token(){ return localStorage.getItem('hc_session_token'); },
+  get expiresAt(){ return +(localStorage.getItem('hc_session_exp') || 0); },
+  save(token, expiresInMs){
+    localStorage.setItem('hc_session_token', token);
+    localStorage.setItem('hc_session_exp', String(Date.now() + expiresInMs));
+  },
+  clear(){
+    localStorage.removeItem('hc_session_token');
+    localStorage.removeItem('hc_session_exp');
+  },
+  get valid(){ return !!this.token && Date.now() < this.expiresAt; },
+};
+function authHeaders(){
+  return Session.token ? {"Authorization": `Bearer ${Session.token}`} : {};
+}
+
+async function attemptLogin(passcode){
+  try{
+    const res = await fetch(`${CONFIG.API_BASE}/api/login`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({passcode}),
+    });
+    if(!res.ok) return false;
+    const json = await res.json();
+    Session.save(json.token, json.expiresInMs);
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+function showLogin(){
+  const overlay = document.getElementById('loginScreen');
+  overlay.classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+  const input = document.getElementById('loginPasscode');
+  const err = document.getElementById('loginError');
+  err.textContent = '';
+  input.value = '';
+  setTimeout(()=> input.focus(), 50);
+}
+function hideLogin(){
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+}
+function setupLoginForm(){
+  const form = document.getElementById('loginForm');
+  const err = document.getElementById('loginError');
+  form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    const passcode = document.getElementById('loginPasscode').value;
+    const ok = await attemptLogin(passcode);
+    btn.disabled = false;
+    if(ok){
+      hideLogin();
+      init();
+    } else {
+      err.textContent = 'PINが違います。もう一度お試しください。';
+      document.getElementById('loginPasscode').value = '';
+    }
+  });
+}
 
 /* ---------- Spotify (PKCE, クライアントシークレット不要) ---------- */
 const SPOTIFY = {
@@ -352,9 +432,10 @@ async function apiCommand(deviceId, command, parameter = "default", commandType 
   try{
     const res = await fetch(`${CONFIG.API_BASE}/api/devices/${deviceId}/command`, {
       method: "POST",
-      headers: {"Content-Type":"application/json"},
+      headers: {"Content-Type":"application/json", ...authHeaders()},
       body: JSON.stringify({command, parameter, commandType})
     });
+    if(res.status === 401){ Session.clear(); showLogin(); return {ok:false, unauthorized:true}; }
     const json = await res.json();
     return {ok: res.ok && json.statusCode === 100, json};
   }catch(e){
@@ -365,70 +446,15 @@ async function apiCommand(deviceId, command, parameter = "default", commandType 
 async function apiStatus(deviceId){
   if(!LIVE || !deviceId) return null;
   try{
-    const res = await fetch(`${CONFIG.API_BASE}/api/devices/${deviceId}/status`);
+    const res = await fetch(`${CONFIG.API_BASE}/api/devices/${deviceId}/status`, {
+      headers: authHeaders(),
+    });
+    if(res.status === 401){ Session.clear(); showLogin(); return null; }
     const json = await res.json();
     return json.body || null;
   }catch(e){
     return null;
   }
-}
-
-/* ---------- Spotify ---------- */
-async function spotifyAction(path, body){
-  if(!LIVE) return {ok:false, mocked:true};
-  try{
-    const res = await fetch(`${CONFIG.API_BASE}/api/spotify/${path}`, {
-      method:"POST",
-      headers: body ? {"Content-Type":"application/json"} : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    return await res.json();
-  }catch(e){
-    return {ok:false, error:String(e)};
-  }
-}
-
-async function fetchNowPlaying(){
-  if(!LIVE) return null;
-  try{
-    const res = await fetch(`${CONFIG.API_BASE}/api/spotify/now-playing`);
-    if(res.status === 401){
-      spotifyAuthOk = false;
-      return null;
-    }
-    if(res.status === 204) return {empty:true};
-    const json = await res.json();
-    if(!json || !json.item) return {empty:true};
-    spotifyAuthOk = true;
-    return {
-      track: json.item.name,
-      artist: (json.item.artists||[]).map(a=>a.name).join(", "),
-      art: (json.item.album && json.item.album.images && json.item.album.images[0]) ? json.item.album.images[0].url : null,
-      playing: json.is_playing,
-      progressMs: json.progress_ms || 0,
-      durationMs: json.item.duration_ms || 0,
-      shuffle: json.shuffle_state,
-      repeat: json.repeat_state,
-    };
-  }catch(e){
-    return null;
-  }
-}
-function fmtMs(ms){
-  const s = Math.floor(ms/1000);
-  return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
-}
-let spotifyAuthOk = true;
-let musicPollTimer = null;
-async function refreshMusicScreen(){
-  const np = await fetchNowPlaying();
-  if(!np || np.empty){ return; }
-  state.music = {
-    playing: np.playing, track: np.track, artist: np.artist, art: np.art,
-    shuffle: np.shuffle, repeat: np.repeat !== "off",
-    progressMs: np.progressMs, durationMs: np.durationMs,
-  };
-  if(currentScreen() === 'music') render('music');
 }
 
 const AC_MODE_CODE = {AUTO:1, COOL:2, DRY:3, HEAT:5};
@@ -985,8 +1011,23 @@ async function init(){
     }, 5000);
   }
 }
-init();
+/* ---------- 起動シーケンス: ログイン確認 → アプリ表示 ---------- */
+setupLoginForm();
+if(LIVE){
+  if(Session.valid){
+    hideLogin();
+    init();
+  } else {
+    Session.clear();
+    showLogin();
+  }
+} else {
+  // Workerが未設定(モック動作)の場合は認証をスキップ
+  hideLogin();
+  init();
+}
 </script>
+
 
 </body>
 </html>
