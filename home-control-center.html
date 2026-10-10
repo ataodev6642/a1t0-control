@@ -249,12 +249,14 @@ async function attemptLogin(passcode){
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({passcode}),
     });
-    if(!res.ok) return false;
+    if(res.status === 401) return {ok:false, reason:"pin"};
+    if(res.status === 404) return {ok:false, reason:"old_worker"};
+    if(!res.ok) return {ok:false, reason:"server", status:res.status};
     const json = await res.json();
     Session.save(json.token, json.expiresInMs);
-    return true;
+    return {ok:true};
   }catch(e){
-    return false;
+    return {ok:false, reason:"network"};
   }
 }
 
@@ -280,13 +282,19 @@ function setupLoginForm(){
     const btn = form.querySelector('button');
     btn.disabled = true;
     const passcode = document.getElementById('loginPasscode').value;
-    const ok = await attemptLogin(passcode);
+    const r = await attemptLogin(passcode);
     btn.disabled = false;
-    if(ok){
+    if(r.ok){
       hideLogin();
       init();
     } else {
-      err.textContent = 'PINが違います。もう一度お試しください。';
+      const msgs = {
+        pin: 'PINが違います。もう一度お試しください。',
+        old_worker: 'Workerが古い版のままです（/api/loginが存在しません）。最新のworker.jsをデプロイしてください。',
+        network: 'Workerに接続できません。ネットワークとWorkerのURLを確認してください。',
+        server: 'Workerでエラーが発生しました（' + r.status + '）。APP_PASSCODE/SESSION_SECRETが未設定の可能性があります。'
+      };
+      err.textContent = msgs[r.reason] || 'ログインに失敗しました。';
       document.getElementById('loginPasscode').value = '';
     }
   });
