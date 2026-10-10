@@ -175,6 +175,28 @@ button.toggle:focus-visible{outline:2px solid var(--primary); outline-offset:2px
   color:var(--text); font-size:20px; text-align:center; letter-spacing:.3em; font-family:"Roboto Mono",monospace;
 }
 .logininput:focus{outline:2px solid var(--primary); outline-offset:2px;}
+
+/* ---- MUSIC: 左ジャケット / 右歌詞 ---- */
+.music-layout{display:grid; grid-template-columns:190px 1fr; gap:22px; height:calc(100dvh - 92px); min-height:240px;}
+.music-left{display:flex; flex-direction:column; justify-content:center; min-width:0;}
+.music-left .art{max-width:170px; margin:0 auto 10px;}
+.music-left .trackname{font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.music-left .trackartist{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.music-left .progress{margin:10px 0 6px;}
+.music-left .controls{gap:14px; margin-bottom:4px;}
+.lyrics{
+  position:relative; overflow:hidden; min-width:0;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 18%,#000 82%,transparent 100%);
+  mask-image:linear-gradient(to bottom,transparent 0,#000 18%,#000 82%,transparent 100%);
+}
+.lyrics .lyr-line{font-size:18px; line-height:1.5; padding:6px 4px; color:var(--label); opacity:.55; transition:opacity .25s, color .25s;}
+.lyrics .lyr-line.active{color:var(--text); opacity:1; font-weight:700;}
+.lyrics .lyr-pad{height:45%;}
+.lyrics .lyr-msg{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--label); font-size:13px; text-align:center; padding:0 12px;}
+@media (orientation: portrait){
+  .music-layout{grid-template-columns:1fr; height:auto;}
+  .lyrics{height:240px;}
+}
 </style>
 </head>
 <body>
@@ -418,6 +440,8 @@ async function spotifySync(){
     state.music.active = false;
   } else {
     state.music.active = true;
+    state.music.id = data.item.id || "";
+    state.music.syncAt = performance.now();
     state.music.track = data.item.name;
     state.music.artist = (data.item.artists||[]).map(a=>a.name).join(", ");
     state.music.art = (data.item.album?.images?.[0]?.url) || "";
@@ -426,9 +450,89 @@ async function spotifySync(){
     state.music.durationMs = data.item.duration_ms || 0;
     state.music.shuffle = !!data.shuffle_state;
     state.music.repeat = data.repeat_state && data.repeat_state !== "off";
+    if(state.music.id) ensureLyrics(state.music.id);
   }
   return JSON.stringify(state.music) !== before;
 }
+
+/* ---------- 歌詞 (Worker経由で非公式の歌詞APIから取得) ---------- */
+const lyricsCache = {}; // trackId -> {status:'loading'|'ok'|'none'|'unconfigured'|'error', type, lines}
+async function ensureLyrics(id){
+  if(!LIVE || !id || lyricsCache[id]) return;
+  lyricsCache[id] = {status:'loading'};
+  try{
+    const res = await fetch(`${CONFIG.API_BASE}/api/lyrics?trackid=${encodeURIComponent(id)}`, {headers: authHeaders()});
+    if(res.status === 401){ delete lyricsCache[id]; Session.clear(); showLogin(); return; }
+    if(res.status === 501){ lyricsCache[id] = {status:'unconfigured'}; }
+    else if(res.status === 404){ lyricsCache[id] = {status:'none'}; }
+    else if(!res.ok){ lyricsCache[id] = {status:'error'}; setTimeout(()=>{ if(lyricsCache[id]?.status==='error') delete lyricsCache[id]; }, 30000); }
+    else{
+      const j = await res.json();
+      const lines = (j.lines||[]).map(l=>({t:+l.startTimeMs||0, w:String(l.words||"")})).filter(l=>l.w.trim()!=="" );
+      lyricsCache[id] = (j.error || !lines.length) ? {status:'none'} : {status:'ok', type:j.syncType, lines};
+    }
+  }catch(e){
+    lyricsCache[id] = {status:'error'};
+    setTimeout(()=>{ if(lyricsCache[id]?.status==='error') delete lyricsCache[id]; }, 30000);
+  }
+  if(currentScreen()==='music' && state.music.id===id){ buildLyricsView(); updateMusicLive(); }
+}
+
+function musicPosMs(){
+  const m = state.music;
+  const p = m.progressMs + (m.playing ? performance.now() - m.syncAt : 0);
+  return Math.max(0, m.durationMs ? Math.min(p, m.durationMs) : p);
+}
+
+let lyricsBuiltFor = null, lyricsActiveIdx = -1;
+function buildLyricsView(){
+  const box = document.getElementById('lyrics');
+  if(!box) return;
+  const id = state.music.id;
+  const c = lyricsCache[id] || {status:'loading'};
+  box.textContent = "";
+  lyricsActiveIdx = -1; lyricsBuiltFor = id + ':' + c.status;
+  if(c.status !== 'ok'){
+    const msg = document.createElement('div');
+    msg.className = 'lyr-msg';
+    msg.textContent = ({loading:'歌詞を取得中…', none:'この曲の歌詞は見つかりませんでした', unconfigured:'歌詞APIが未設定です（LYRICS_API_BASE）', error:'歌詞の取得に失敗しました'})[c.status] || '';
+    box.appendChild(msg);
+    return;
+  }
+  const pad1 = document.createElement('div'); pad1.className = 'lyr-pad'; box.appendChild(pad1);
+  c.lines.forEach((l,i)=>{
+    const d = document.createElement('div');
+    d.className = 'lyr-line'; d.dataset.i = i;
+    d.textContent = l.w; // textContentで挿入(外部データなのでHTMLとして解釈しない)
+    box.appendChild(d);
+  });
+  const pad2 = document.createElement('div'); pad2.className = 'lyr-pad'; box.appendChild(pad2);
+}
+
+function updateMusicLive(){
+  if(currentScreen() !== 'music' || !state.music.active) return;
+  const pos = musicPosMs();
+  const bar = document.getElementById('mProgBar'), cur = document.getElementById('mProgCur');
+  if(bar) bar.style.width = (state.music.durationMs ? pos/state.music.durationMs*100 : 0) + '%';
+  if(cur) cur.textContent = fmtMs(pos);
+  const box = document.getElementById('lyrics');
+  if(!box) return;
+  const id = state.music.id, c = lyricsCache[id];
+  if(lyricsBuiltFor !== id + ':' + (c ? c.status : 'loading')) buildLyricsView();
+  if(!c || c.status !== 'ok') return;
+  let idx = -1;
+  for(let i=0;i<c.lines.length;i++){ if(c.lines[i].t <= pos + 250) idx = i; else break; }
+  if(c.type === 'UNSYNCED') return; // タイムタグ無しの歌詞は流さず静的表示
+  if(idx === lyricsActiveIdx) return;
+  const old = box.querySelector('.lyr-line.active'); if(old) old.classList.remove('active');
+  lyricsActiveIdx = idx;
+  if(idx < 0) return;
+  const el = box.querySelector(`.lyr-line[data-i="${idx}"]`);
+  if(!el) return;
+  el.classList.add('active');
+  box.scrollTo({top: el.offsetTop - box.clientHeight/2 + el.clientHeight/2, behavior:'smooth'});
+}
+setInterval(updateMusicLive, 300);
 
 function fmtMs(ms){
   const s = Math.floor(ms/1000);
@@ -530,7 +634,7 @@ const state = {
   tape: {on:false},
   ac: {on:true, mode:"COOL", temp:26, fan:"AUTO"},
   tv: {on:true, input:"HDMI 1", volume:18},
-  music: {active:false, playing:false, track:"", artist:"", shuffle:false, repeat:false, progressMs:0, durationMs:0, art:null}
+  music: {id:"", syncAt:0, active:false, playing:false, track:"", artist:"", shuffle:false, repeat:false, progressMs:0, durationMs:0, art:null}
 };
 
 /* ---------- icons ---------- */
@@ -724,25 +828,26 @@ const SCREENS = {
           <p class="rowsub" style="margin:14px 0;">現在再生中の項目がありません</p>
         </div></div>`;
     }
-    return `<div class="screen-narrow">
-    <div class="player">
-      <div class="art">${state.music.art ? `<img src="${state.music.art}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : I.music.replace('width="22" height="22"','width="48" height="48"').replace('stroke="var(--primary)"','stroke="#fff"')}</div>
-      <div class="trackname">${state.music.track}</div>
-      <div class="trackartist">${state.music.artist}</div>
-      <div class="progress mono">
-        <span>${fmtMs(state.music.progressMs)}</span><div class="progressbar"><i style="width:${state.music.durationMs? (state.music.progressMs/state.music.durationMs*100):0}%"></i></div><span>${fmtMs(state.music.durationMs)}</span>
+    return `<div class="music-layout">
+      <div class="music-left">
+        <div class="art">${state.music.art ? `<img src="${state.music.art}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : I.music.replace('width="22" height="22"','width="48" height="48"').replace('stroke="var(--primary)"','stroke="#fff"')}</div>
+        <div class="trackname">${state.music.track}</div>
+        <div class="trackartist">${state.music.artist}</div>
+        <div class="progress mono">
+          <span id="mProgCur">${fmtMs(musicPosMs())}</span><div class="progressbar"><i id="mProgBar" style="width:${state.music.durationMs? (musicPosMs()/state.music.durationMs*100):0}%"></i></div><span>${fmtMs(state.music.durationMs)}</span>
+        </div>
+        <div class="controls">
+          <button id="prevBtn">${I.prev}</button>
+          <button class="play" id="playBtn">${state.music.playing?I.pause:I.play}</button>
+          <button id="nextBtn">${I.next}</button>
+        </div>
+        <div class="subcontrols">
+          <button id="shufBtn" class="${state.music.shuffle?'active':''}">${I.shuffle}</button>
+          <button id="repBtn" class="${state.music.repeat?'active':''}">${I.repeat}</button>
+        </div>
       </div>
-      <div class="controls">
-        <button id="prevBtn">${I.prev}</button>
-        <button class="play" id="playBtn">${state.music.playing?I.pause:I.play}</button>
-        <button id="nextBtn">${I.next}</button>
-      </div>
-      <div class="subcontrols">
-        <button id="shufBtn" class="${state.music.shuffle?'active':''}">${I.shuffle}</button>
-        <button id="repBtn" class="${state.music.repeat?'active':''}">${I.repeat}</button>
-      </div>
-    </div>
-  </div>`;
+      <div class="lyrics" id="lyrics"></div>
+    </div>`;
   },
 
   scenes: ()=>{
@@ -854,6 +959,7 @@ function bind(screen){
   }
 
   if(screen === 'music'){
+    if(state.music.active){ ensureLyrics(state.music.id); buildLyricsView(); updateMusicLive(); }
     const loginBtn = document.getElementById('spLoginBtn');
     if(loginBtn){ loginBtn.addEventListener('click', spotifyLogin); }
 
@@ -1013,9 +1119,12 @@ async function init(){
   if(SPOTIFY_LIVE && SpotifyAuth.loggedIn){
     spotifySync().then(()=> render(currentScreen()));
     setInterval(async ()=>{
-      const changed = await spotifySync();
+      const sig = m=>[m.active,m.id,m.playing,m.shuffle,m.repeat,m.track].join('|');
+      const before = sig(state.music);
+      await spotifySync();
       const s = currentScreen();
-      if(changed && (s === 'home' || s === 'music')) render(s);
+      if(sig(state.music) !== before){ if(s === 'home' || s === 'music') render(s); }
+      else if(s === 'music') updateMusicLive();
     }, 5000);
   }
 }
