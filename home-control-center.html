@@ -615,7 +615,8 @@ async function ensureTranslation(id){
     const j = await res.json();
     if(!Array.isArray(j.translations) || j.translations.length !== c.lines.length) throw new Error('bad');
     c.tr = j.translations.map(x=>String(x));
-    trSave(id, c.tr);
+    const blanks = c.tr.filter(x=>!x).length;
+    if(blanks <= c.tr.length * 0.1) trSave(id, c.tr); // 抜けが多いときは保存せず、次回再試行する
   }catch(e){
     c.tr = 'error'; c.trErrAt = Date.now();
     toast('和訳に失敗しました: ' + String(e && e.message || e).slice(0, 90));
