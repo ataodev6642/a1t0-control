@@ -204,6 +204,9 @@ button.toggle:focus-visible{outline:2px solid var(--primary); outline-offset:2px
   .art-wrap{flex:none; height:200px;}
   .lyrics{height:280px;}
 }
+.lyrics .lyr-tr{font-size:clamp(12px,1.7vw,17px); font-weight:400; line-height:1.35; margin-top:2px; color:var(--label); opacity:.95;}
+.lyrics .lyr-tr:empty{display:none;}
+.lyrics .lyr-line.active .lyr-tr{color:var(--text); opacity:.85;}
 /* ---- 検索 / プレイリスト ---- */
 .hdrright{display:flex; align-items:center; gap:8px;}
 .hdrextra{display:flex; gap:6px;}
@@ -508,7 +511,7 @@ async function ensureLyrics(id){
     lyricsCache[id] = {status:'error'};
     setTimeout(()=>{ if(lyricsCache[id]?.status==='error') delete lyricsCache[id]; }, 30000);
   }
-  if(currentScreen()==='music' && state.music.id===id){ buildLyricsView(); updateMusicLive(); }
+  if(currentScreen()==='music' && state.music.id===id){ buildLyricsView(); updateMusicLive(); ensureTranslation(id); }
 }
 
 function musicPosMs(){
@@ -536,10 +539,14 @@ function buildLyricsView(){
   c.lines.forEach((l,i)=>{
     const d = document.createElement('div');
     d.className = 'lyr-line'; d.dataset.i = i;
-    d.textContent = l.w; // textContentで挿入(外部データなのでHTMLとして解釈しない)
+    const t = document.createElement('div'); t.className = 'lyr-t';
+    t.textContent = l.w; // textContentで挿入(外部データなのでHTMLとして解釈しない)
+    const tr = document.createElement('div'); tr.className = 'lyr-tr';
+    d.appendChild(t); d.appendChild(tr);
     box.appendChild(d);
   });
   const pad2 = document.createElement('div'); pad2.className = 'lyr-pad'; box.appendChild(pad2);
+  if(Array.isArray(c.tr)) applyTranslations();
 }
 
 function updateMusicLive(){
@@ -564,6 +571,67 @@ function updateMusicLive(){
   if(!el) return;
   el.classList.add('active');
   box.scrollTo({top: el.offsetTop - box.clientHeight/2 + el.clientHeight/2, behavior:'smooth'});
+}
+/* ---------- 和訳 (洋楽の歌詞をWorker経由のWorkers AIで日本語訳し、各行の下に小さく表示) ---------- */
+function trEnabled(){ return localStorage.getItem('hcc_tr_on') !== '0'; }
+function isJapaneseLyrics(lines){
+  const letters = lines.map(l=>l.w).join('').replace(/[\s\p{P}\p{S}]/gu, '');
+  if(!letters) return true;
+  const kana = (letters.match(/[\u3040-\u30ff]/g) || []).length;
+  return kana / letters.length > 0.15; // かなが多い=日本語の歌詞なので訳さない
+}
+function trLoad(id){ try{ return JSON.parse(localStorage.getItem('hcc_tr_'+id) || 'null'); }catch{ return null; } }
+function trSave(id, arr){
+  try{
+    localStorage.setItem('hcc_tr_'+id, JSON.stringify(arr));
+    let idx = JSON.parse(localStorage.getItem('hcc_tr_index') || '[]').filter(x=>x!==id);
+    idx.push(id);
+    while(idx.length > 40){ localStorage.removeItem('hcc_tr_'+idx.shift()); } // 古いものから削除
+    localStorage.setItem('hcc_tr_index', JSON.stringify(idx));
+  }catch(e){ /* 容量超過などは無視 */ }
+}
+async function ensureTranslation(id){
+  const c = lyricsCache[id];
+  if(!LIVE || !c || c.status !== 'ok' || !trEnabled()) return;
+  if(c.tr === 'loading' || Array.isArray(c.tr) || c.tr === null) return;
+  if(c.tr === 'error' && Date.now() - (c.trErrAt||0) < 60000) return;
+  if(isJapaneseLyrics(c.lines)){ c.tr = null; return; }
+  const saved = trLoad(id);
+  if(saved && saved.length === c.lines.length){ c.tr = saved; applyTranslations(); return; }
+  c.tr = 'loading';
+  try{
+    const res = await fetch(`${CONFIG.API_BASE}/api/translate`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json', ...authHeaders()},
+      body: JSON.stringify({trackid:id, lines:c.lines.map(l=>l.w)}),
+    });
+    if(res.status === 401){ c.tr = undefined; Session.clear(); showLogin(); return; }
+    if(res.status === 501){ c.tr = null; toast('和訳が未設定です（wrangler.tomlの[ai]とデプロイを確認）'); return; }
+    if(!res.ok) throw new Error('http '+res.status);
+    const j = await res.json();
+    if(!Array.isArray(j.translations) || j.translations.length !== c.lines.length) throw new Error('bad');
+    c.tr = j.translations.map(x=>String(x));
+    trSave(id, c.tr);
+  }catch(e){
+    c.tr = 'error'; c.trErrAt = Date.now();
+  }
+  if(currentScreen() === 'music' && state.music.id === id) applyTranslations();
+}
+function applyTranslations(){
+  const box = document.getElementById('lyrics');
+  if(!box) return;
+  const c = lyricsCache[state.music.id];
+  const arr = (c && Array.isArray(c.tr) && trEnabled()) ? c.tr : null;
+  let changed = false;
+  box.querySelectorAll('.lyr-line').forEach(n=>{
+    const el = n.querySelector('.lyr-tr');
+    if(!el) return;
+    const i = +n.dataset.i;
+    let t = arr ? (arr[i] || '') : '';
+    if(c && c.lines && c.lines[i] && t === c.lines[i].w) t = ''; // ♪など原文と同じ行は出さない
+    if(el.textContent !== t){ el.textContent = t; changed = true; }
+  });
+  if(changed){ lyricsActiveIdx = -1; updateMusicLive(); } // 行の高さが変わるので中央位置を取り直す
 }
 setInterval(updateMusicLive, 300);
 
@@ -853,7 +921,14 @@ function updateHeaderExtra(screen){
   if(screen !== 'music' || !SPOTIFY_LIVE || !SpotifyAuth.loggedIn){ box.innerHTML = ''; return; }
   const m = musicUI.mode;
   const b = (k,l)=>`<button class="hdrbtn ${m===k?'active':''}" data-m="${k}">${l}</button>`;
-  box.innerHTML = b('now','再生中') + b('search','曲検索') + b('playlists','プレイリスト') + b('devices','デバイス');
+  box.innerHTML = b('now','再生中') + b('search','曲検索') + b('playlists','プレイリスト') + b('devices','デバイス')
+    + `<button class="hdrbtn ${trEnabled()?'active':''}" id="trBtn">和訳</button>`;
+  document.getElementById('trBtn').addEventListener('click', ()=>{
+    localStorage.setItem('hcc_tr_on', trEnabled() ? '0' : '1');
+    toast(trEnabled() ? '和訳 ON（洋楽のみ）' : '和訳 OFF');
+    updateHeaderExtra('music');
+    if(musicUI.mode === 'now'){ ensureTranslation(state.music.id); applyTranslations(); }
+  });
   box.querySelectorAll('[data-m]').forEach(el=> el.addEventListener('click', ()=>{
     musicUI.mode = el.dataset.m; musicUI.msg = '';
     if(musicUI.mode === 'devices') musicUI.devices = null;
@@ -1130,7 +1205,7 @@ function bind(screen){
 
   if(screen === 'music'){
     if(musicUI.mode !== 'now') bindBrowse();
-    else if(state.music.active){ ensureLyrics(state.music.id); buildLyricsView(); updateMusicLive(); }
+    else if(state.music.active){ ensureLyrics(state.music.id); buildLyricsView(); updateMusicLive(); ensureTranslation(state.music.id); }
     const loginBtn = document.getElementById('spLoginBtn');
     if(loginBtn){ loginBtn.addEventListener('click', spotifyLogin); }
 
