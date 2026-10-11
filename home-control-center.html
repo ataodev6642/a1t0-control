@@ -607,13 +607,18 @@ async function ensureTranslation(id){
     });
     if(res.status === 401){ c.tr = undefined; Session.clear(); showLogin(); return; }
     if(res.status === 501){ c.tr = null; toast('和訳が未設定です（wrangler.tomlの[ai]とデプロイを確認）'); return; }
-    if(!res.ok) throw new Error('http '+res.status);
+    if(!res.ok){
+      let d = '';
+      try{ const e = await res.json(); d = e.detail || e.error || ''; }catch{}
+      throw new Error('HTTP ' + res.status + (d ? ' ' + d : ''));
+    }
     const j = await res.json();
     if(!Array.isArray(j.translations) || j.translations.length !== c.lines.length) throw new Error('bad');
     c.tr = j.translations.map(x=>String(x));
     trSave(id, c.tr);
   }catch(e){
     c.tr = 'error'; c.trErrAt = Date.now();
+    toast('和訳に失敗しました: ' + String(e && e.message || e).slice(0, 90));
   }
   if(currentScreen() === 'music' && state.music.id === id) applyTranslations();
 }
